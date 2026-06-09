@@ -12,16 +12,29 @@
     <h1>Ember</h1>
     <span id="tagline">Real-time wildfire evacuation companion</span>
   </header>
+
   <main id="layout">
     <div id="map"></div>
     <aside id="panel">
       <h2>Status</h2>
       <p id="status-text">Map loading…</p>
+      <p id="wind-text"></p>
+      <button id="mode-btn">Switch to Scenario Mode</button>
+      <div id="legend">
+        <div class="legend-title">Projected spread</div>
+        <div><span class="swatch" style="background:#ff3b30"></span> Next 1 hour</div>
+        <div><span class="swatch" style="background:#ff8c42"></span> Next 2 hours</div>
+        <div><span class="swatch" style="background:#ffcf6b"></span> Next 3 hours</div>
+      </div>
     </aside>
   </main>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="feeds.js"></script>
   <script src="geo.js"></script>
+  <script src="wind.js"></script>
+  <script src="spread.js"></script>
+  <script src="scenario.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
