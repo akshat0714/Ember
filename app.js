@@ -3,9 +3,10 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors", maxZoom: 19,
 }).addTo(map);
 
-loadFires(map).then((fires) => {
+loadFires(map).then(({ fires, live }) => {
+  const source = live ? "live data" : "sample data (live feed unavailable)";
   document.getElementById("status-text").textContent =
-    fires.length + " active wildfires loaded. Finding your location…";
+    `${fires.length} wildfires loaded — ${source}. Finding your location…`;
 
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -14,14 +15,11 @@ loadFires(map).then((fires) => {
       map.setView([latitude, longitude], 9);
       const km = nearestFireKm(latitude, longitude, fires);
       document.getElementById("status-text").textContent =
-        `Risk: ${riskLevel(km)} — nearest fire ${km.toFixed(1)} km away.`;
+        `Risk: ${riskLevel(km)} — nearest fire ${km.toFixed(1)} km away (${live ? "live" : "sample"}).`;
     },
     () => {
       document.getElementById("status-text").textContent =
         "Location denied — showing the map and fires only.";
     }
   );
-}).catch((err) => {
-  document.getElementById("status-text").textContent = "Couldn't load fire data.";
-  console.error(err);
 });
