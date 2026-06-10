@@ -1,76 +1,21 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ember — Wildfire Evacuation Companion</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header id="topbar">
-    <h1>Ember</h1>
-    <span id="tagline">Real-time wildfire evacuation companion</span>
-  </header>
-
-  <main id="layout">
-    <div id="map"></div>
-    <aside id="panel">
-      <div class="mode-switch">
-        <button id="mode-live" class="mode-btn active">Live</button>
-        <button id="mode-scenario" class="mode-btn">2025 Palisades</button>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Your risk</div>
-        <div id="risk-badge" class="risk-badge">—</div>
-        <div id="risk-detail" class="card-sub">Locating…</div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Wind</div>
-        <div id="wind-main" class="card-value">—</div>
-        <div id="wind-detail" class="card-sub"></div>
-      </div>
-
-      <div id="scenario-card" class="card scenario-card" hidden>
-        <div class="card-label">Scenario · 2025 Palisades Fire</div>
-        <ul class="facts">
-          <li><span>Dates</span><b>Jan 7–31, 2025</b></li>
-          <li><span>Burned</span><b>~23,448 acres</b></li>
-          <li><span>Structures lost</span><b>~6,800</b></li>
-          <li><span>Fatalities</span><b>12</b></li>
-          <li><span>Evacuated</span><b>~105,000</b></li>
-          <li><span>Winds</span><b>NE Santa Ana, gusts ~130 km/h</b></li>
-        </ul>
-        <div class="time-row">
-          <button id="play-btn" class="mini-btn">Play</button>
-          <input id="time-slider" type="range" min="0" max="100" step="1" value="25" />
-        </div>
-        <div id="time-readout" class="card-sub">Reconstruction · 25%</div>
-        <button id="official-btn" class="mini-btn wide">Show official recorded perimeter</button>
-        <div id="official-status" class="card-sub"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Legend</div>
-        <div class="legend-row"><span class="swatch" style="background:#ff9a1f"></span> Active fire front</div>
-        <div class="legend-row"><span class="swatch" style="background:#c81400"></span> Burning</div>
-        <div class="legend-row"><span class="swatch" style="background:#5e1400"></span> Burned (charred)</div>
-        <div class="legend-row"><span class="swatch" style="background:#00e5ff"></span> Official recorded perimeter</div>
-      </div>
-
-      <p class="model-note">The fire animation is a hand-drawn reconstruction of the 2025 Palisades burn area for illustration — it grows out of the ignition point and is kept to land, but it is approximate, not a precise simulation. The cyan layer is the real recorded perimeter from NIFC/FIRIS.</p>
-    </aside>
-  </main>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="feeds.js"></script>
-  <script src="geo.js"></script>
-  <script src="wind.js"></script>
-  <script src="spread.js"></script>
-  <script src="scenario.js"></script>
-  <script src="official.js"></script>
-  <script src="app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Kenneth Fire — 3D historical fire-spread reconstruction over photorealistic terrain and structures. Not emergency guidance."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.5' fill='%23ff7a1a'/%3E%3Ccircle cx='8' cy='8' r='3' fill='%23ffd9a0'/%3E%3C/svg%3E"
+    />
+    <title>Kenneth Fire — 3D Fire-Spread Reconstruction</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
