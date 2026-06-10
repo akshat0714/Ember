@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ember — 3D Terrain (Palisades)</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #map { height: 100%; width: 100%; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    #map { position: absolute; inset: 0; }
+    #panel { position: absolute; top: 16px; right: 16px; width: 300px; background: rgba(18,21,27,.92); color: #e7e9ee; border: 1px solid #2a2f3a; border-radius: 14px; padding: 16px; backdrop-filter: blur(6px); z-index: 2; }
+    #panel .brand { color: #ff6b35; font-weight: 800; font-size: 18px; }
+    #panel .sub { color: #9aa1ad; font-size: 12px; margin-bottom: 12px; }
+    .row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    #play { padding: 8px 14px; border: none; border-radius: 8px; background: linear-gradient(135deg,#ff3b30,#ff8c42); color: #fff; font-weight: 700; cursor: pointer; }
+    #readout { font-size: 12px; color: #9aa1ad; }
+    .legend div { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 3px 0; }
+    .sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+    .hint { font-size: 11px; color: #9aa1ad; margin-top: 10px; }
+    .note { font-size: 11px; color: #9aa1ad; margin-top: 8px; border-top: 1px solid #2a2f3a; padding-top: 8px; line-height: 1.4; }
+    .marker { position: relative; width: 0; height: 0; }
+    .marker .core, .marker .ring { position: absolute; top: 0; left: 0; border-radius: 50%; transform: translate(-50%, -50%); }
+    .marker .ring { animation: ring 2s ease-out infinite; }
+    .marker.person .core { width: 16px; height: 16px; background: #1e90ff; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,0,0,.55); }
+    .marker.person .ring { width: 16px; height: 16px; background: rgba(30,144,255,.5); }
+    .marker.fire .core { width: 18px; height: 18px; background: radial-gradient(circle,#fff7b0 5%,#ff3b30 80%); border: 2px solid #fff; box-shadow: 0 0 16px rgba(255,90,0,.9); }
+    .marker.fire .ring { width: 18px; height: 18px; background: rgba(255,90,0,.5); }
+    @keyframes ring { 0% { opacity:.6; transform: translate(-50%,-50%) scale(1); } 100% { opacity:0; transform: translate(-50%,-50%) scale(4); } }
+    .maplibregl-ctrl-attrib { font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <div class="brand">Ember · 3D Terrain</div>
+    <div class="sub">2025 Palisades reconstruction</div>
+    <div class="row"><button id="play">Play</button><span id="readout">Reconstruction · 25%</span></div>
+    <div class="legend">
+      <div><span class="sw" style="background:#ff9a1f"></span> Active front</div>
+      <div><span class="sw" style="background:#c81400"></span> Burning</div>
+      <div><span class="sw" style="background:#5e1400"></span> Charred</div>
+      <div><span class="sw" style="background:#00e5ff"></span> Official perimeter</div>
+    </div>
+    <div class="hint">Drag to pan · right-drag (or ctrl-drag) to tilt &amp; rotate</div>
+    <div class="note">Hand-drawn reconstruction draped on real 3D terrain; cyan is the real recorded perimeter (NIFC/FIRIS).</div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+  <script>
+    // all coordinates are [lng, lat] for MapLibre / GeoJSON
+    const IGNITION = [-118.5425, 34.0725];
+    const PERSON = [-118.540, 34.050];
+    const FINAL = [
+      [-118.5250, 34.0860], [-118.5100, 34.0800], [-118.5090, 34.0560], [-118.5230, 34.0450],
+      [-118.5450, 34.0430], [-118.5680, 34.0460], [-118.5860, 34.0560], [-118.5870, 34.0720],
+      [-118.5740, 34.0830], [-118.5500, 34.0880], [-118.5300, 34.0880],
+    ];
+
+    function closeRing(r) {
+      const c = r.slice();
+      if (c.length && (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1])) c.push(c[0]);
+      return c;
+    }
+    function scaleRing(ring, o, f) { return ring.map(([x, y]) => [o[0] + (x - o[0]) * f, o[1] + (y - o[1]) * f]); }
+    function fireFC(f) {
+      const bands = [{ band: 3, s: 1.0 }, { band: 2, s: 0.8 }, { band: 1, s: 0.58 }, { band: 0, s: 0.35 }];
+      return {
+        type: "FeatureCollection",
+        features: bands.map((b) => ({
+          type: "Feature", properties: { band: b.band },
+          geometry: { type: "Polygon", coordinates: [closeRing(scaleRing(FINAL, IGNITION, f * b.s))] },
+        })),
+      };
+    }
+
+    const map = new maplibregl.Map({
+      container: "map", maxPitch: 85, center: [-118.55, 34.045], zoom: 12.7, pitch: 66, bearing: 10,
+      style: {
+        version: 8,
+        sources: {
+          sat: { type: "raster", tiles: ["https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], tileSize: 256, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" },
+          dem: { type: "raster-dem", tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"], tileSize: 256, encoding: "terrarium", maxzoom: 15 },
+        },
+        layers: [
+          { id: "sat", type: "raster", source: "sat" },
+          { id: "hills", type: "hillshade", source: "dem", paint: { "hillshade-exaggeration": 0.4 } },
+        ],
+        terrain: { source: "dem", exaggeration: 1.5 },
+      },
+    });
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-left");
+
+    function dot(cls) {
+      const el = document.createElement("div");
+      el.className = "marker " + cls;
+      el.innerHTML = '<span class="ring"></span><span class="core"></span>';
+      return el;
+    }
+
+    map.on("load", () => {
+      map.addSource("fire", { type: "geojson", data: fireFC(0.25) });
+      const bands = [["band3", 3, "#ff9a1f", 0.30], ["band2", 2, "#ff5a00", 0.36], ["band1", 1, "#c81400", 0.45], ["band0", 0, "#5e1400", 0.60]];
+      for (const [id, band, color, op] of bands) {
+        map.addLayer({ id, type: "fill", source: "fire", filter: ["==", ["get", "band"], band], paint: { "fill-color": color, "fill-opacity": op } });
+      }
+      map.addLayer({ id: "front-line", type: "line", source: "fire", filter: ["==", ["get", "band"], 3], paint: { "line-color": "#ffd24a", "line-width": 2.5 } });
+
+      new maplibregl.Marker({ element: dot("fire"), anchor: "center" }).setLngLat(IGNITION).addTo(map);
+      new maplibregl.Marker({ element: dot("person"), anchor: "center" }).setLngLat(PERSON).addTo(map);
+
+      fetch("palisades_perimeter.geojson")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((gj) => {
+          if (!gj) return;
+          map.addSource("official", { type: "geojson", data: gj });
+          map.addLayer({ id: "official", type: "line", source: "official", paint: { "line-color": "#00e5ff", "line-width": 2 } });
+        })
+        .catch(() => {});
+    });
+
+    let f = 0.25, timer = null;
+    const playBtn = document.getElementById("play");
+    const readout = document.getElementById("readout");
+    function setF(v) {
+      f = v;
+      const s = map.getSource("fire");
+      if (s) s.setData(fireFC(f));
+      readout.textContent = `Reconstruction · ${Math.round(f * 100)}% of final burn area`;
+    }
+    playBtn.addEventListener("click", () => {
+      if (timer) { clearInterval(timer); timer = null; playBtn.textContent = "Play"; return; }
+      playBtn.textContent = "Pause";
+      if (f >= 1) f = 0;
+      timer = setInterval(() => {
+        f += 0.02;
+        if (f >= 1) { setF(1); clearInterval(timer); timer = null; playBtn.textContent = "Play"; return; }
+        setF(f);
+      }, 120);
+    });
+  </script>
+</body>
+</html>
