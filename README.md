@@ -55,12 +55,4 @@ This app renders Google photorealistic 3D terrain, which requires a Google Maps 
 
 ## AI-usage declaration
 
-This project was built with substantial assistance from an AI coding assistant (Anthropic's Claude), and that assistance is disclosed here in full, as the hackathon requires.
 
-**What AI did:** AI wrote and structured the large majority of the code in this repository — including the fire-spread model (the Dijkstra minimum-travel-time arrival field and the frontier-warp front animation), the prediction-band contouring (marching squares + smoothing), the irregular terrain-driven spread shaping, the one-button "Help" rescue flow and its route risk-scoring (including the movement and downwind-penalty fixes), the React/TypeScript components and UI, the typed data and configuration modules, and the build setup. AI was also used for background research and to help draft this README.
-
-**Runtime AI:** the running app can also call Google's Gemini API to phrase the rescue assistant's messages when a `VITE_GEMINI_API_KEY` is provided; it falls back to built-in wording when no key is set.
-
-**What I did:** _[Fill this in honestly — only what is actually true. For example: the original concept and goals for Ember; choosing the Kenneth Fire as the case study and selecting the data sources; design and feature decisions; running, testing, and debugging the app (such as the API-key and build setup); and integrating and deploying the final result. Replace this sentence with your real contribution.]_
-
-— _[Your name]_
