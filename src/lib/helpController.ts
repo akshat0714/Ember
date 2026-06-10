@@ -1,31 +1,3 @@
-/**
- * Help-flow rescue controller.
- *
- * One press of "Help" runs the whole rescue simulation:
- *
- *  1. LOCATE — the world clock restarts at ignition and the app "locates"
- *     the person: the simulated GPS fix drops onto E Las Virgenes Canyon Rd,
- *     directly in the modeled spread path (clear blue dot on the map).
- *  2. ASK — the assistant asks what they have with them (car / bike / on
- *     foot, any disability). The answer is parsed locally; replies are
- *     phrased by the LLM when a Gemini key is set, with a deterministic
- *     fallback. The resource sets the movement speed.
- *  3. GUIDE — the authored escape routes (real road alignments) are
- *     risk-scored against the live fire model; the best survivor draws as
- *     the blue path and the assistant reads out qualitative directions
- *     (compass + road name). Routes and the safe destination are
- *     re-validated on every model refresh; if the modeled spread cuts the
- *     route, the backup is chosen and announced — and if nothing survives,
- *     the app says so honestly instead of faking a route.
- *  4. ESCAPE — the simulated person responds perfectly: they follow the
- *     blue path in world time at their resource's speed until they reach
- *     the green safe zone.
- *
- * World-time coupling: while the person is replying the world runs in real
- * time (1 fire-minute = 1 real minute); once they are moving it
- * fast-forwards (1 fire-minute = 1 real second); after arrival the demo's
- * normal playback speed resumes. Chatting literally costs world time.
- */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ESCAPE_ROUTES,
@@ -53,6 +25,7 @@ import {
   type ChatMessage,
   type TransportMode,
 } from './rescueAssistant';
+import { fetchEscapeRoutesForMode } from './googleDirections';
 import { classifyUserRisk, scoreRoute, type UserRiskClass } from './routeRiskScoring';
 import { makeFix, type LocationFix } from './userLocation';
 
@@ -65,10 +38,8 @@ export type HelpStatus =
   | 'arrived'
   | 'no-route';
 
-/** The route currently shown and followed. */
 export interface ActiveGuidance {
   route: EscapeRoute;
-  /** Path the person actually follows (from where they were when chosen). */
   path: LatLng[];
   riskStatus: 'safe' | 'caution';
   totalM: number;
@@ -88,7 +59,6 @@ export interface HelpState {
   userRisk: UserRiskClass | null;
   remainingM: number | null;
   remainingS: number | null;
-  /** Fire-ms per real-ms for the shared world clock (null = app default). */
   clockRate: number | null;
 }
 
@@ -132,7 +102,6 @@ function movementMps(mode: TransportMode | null, accessibilityNote: string | nul
   return HELP_CONFIG.movement.footMps;
 }
 
-/** A destination is only offered while it keeps clear margins from the risk. */
 export function destinationClear(
   destination: SafeDestination,
   snapshot: FireRiskSnapshot,
@@ -149,7 +118,6 @@ export function destinationClear(
   return true;
 }
 
-/** Remaining piece of a route's path from a position (or the whole path). */
 function remainingPath(path: LatLng[], from: LatLng | null): LatLng[] {
   if (!from) return path;
   const { segIndex } = projectOnPath(path, from);
@@ -157,29 +125,35 @@ function remainingPath(path: LatLng[], from: LatLng | null): LatLng[] {
   return rest.length >= 1 ? [{ lat: from.lat, lng: from.lng }, ...rest] : [];
 }
 
-/**
- * Pick the best escape route against the live model: hard-rejected routes
- * and threatened destinations are out; the lowest risk-score survivor wins.
- */
 export function selectEscapeRoute(
   snapshot: FireRiskSnapshot,
   from: LatLng | null,
   mps: number,
+  routes: EscapeRoute[] = ESCAPE_ROUTES,
+  opts: { preferNearest?: boolean } = {},
 ): { route: EscapeRoute; path: LatLng[]; riskStatus: 'safe' | 'caution' } | null {
-  let best: { route: EscapeRoute; path: LatLng[]; riskStatus: 'safe' | 'caution'; score: number } | null =
-    null;
-  for (const route of ESCAPE_ROUTES) {
+  let best:
+    | { route: EscapeRoute; path: LatLng[]; riskStatus: 'safe' | 'caution'; key: number }
+    | null = null;
+  for (const route of routes) {
     if (!destinationClear(route.destination, snapshot)) continue;
     const path = remainingPath(route.path, from);
     if (path.length < 2) continue;
     const distanceM = pathLengthM(path);
     const scored = scoreRoute(
-      { destination: route.destination, path, distanceM, durationS: distanceM / mps, source: 'authored' },
+      {
+        destination: route.destination,
+        path,
+        distanceM,
+        durationS: distanceM / mps,
+        source: route.source ?? 'authored',
+      },
       snapshot,
     );
     if (scored.status === 'rejected') continue;
-    if (!best || scored.score < best.score) {
-      best = { route, path, riskStatus: scored.status, score: scored.score };
+    const key = opts.preferNearest ? distanceM : scored.score;
+    if (!best || key < best.key) {
+      best = { route, path, riskStatus: scored.status, key };
     }
   }
   return best ? { route: best.route, path: best.path, riskStatus: best.riskStatus } : null;
@@ -203,9 +177,10 @@ interface ControllerRefs {
   chatFocused: boolean;
   chatBusy: boolean;
   moveCarryM: number;
-  /** Arc length travelled along the active guidance path, metres. */
   alongM: number;
   lastWorldMs: number | null;
+  modeRoutes: EscapeRoute[] | null;
+  routesMode: TransportMode | null;
 }
 
 export function useHelpController(
@@ -234,6 +209,8 @@ export function useHelpController(
     moveCarryM: 0,
     alongM: 0,
     lastWorldMs: null,
+    modeRoutes: null,
+    routesMode: null,
   });
   refs.current.snapshot = snapshot;
   const restartWorldRef = useRef(restartWorld);
@@ -278,7 +255,6 @@ export function useHelpController(
     [patch],
   );
 
-  /** Compose context and let the assistant phrase a text-only reply. */
   const announce = useCallback(
     async (event: AssistantEvent, userMessage: string | null = null) => {
       const r = refs.current;
@@ -313,13 +289,14 @@ export function useHelpController(
     [patch, pushMessage],
   );
 
-  /** Choose (or re-choose) the route from the person's current position. */
   const chooseRoute = useCallback(
     (announceEvent: AssistantEvent | null): boolean => {
       const r = refs.current;
       if (!r.fix || !r.snapshot) return false;
       const mps = movementMps(r.mode, r.accessibilityNote);
-      const choice = selectEscapeRoute(r.snapshot, r.fix, mps);
+      const choice = selectEscapeRoute(r.snapshot, r.fix, mps, r.modeRoutes ?? ESCAPE_ROUTES, {
+        preferNearest: r.accessibilityNote !== null,
+      });
       if (!choice) {
         r.guidance = null;
         r.moving = false;
@@ -343,7 +320,6 @@ export function useHelpController(
         totalM: pathLengthM(choice.path),
       };
       r.guidance = guidance;
-      // The guidance path always starts at the person's current position.
       r.alongM = 0;
       if (!r.arrived) r.moving = true;
       setStatus('guiding', {
@@ -357,6 +333,27 @@ export function useHelpController(
     },
     [announce, setStatus],
   );
+
+  const ensureModeRoutes = useCallback(async () => {
+    const r = refs.current;
+    if (!r.mode || (r.routesMode === r.mode && r.modeRoutes)) return;
+    r.routesMode = r.mode;
+    const destinations = ESCAPE_ROUTES.map((route) => route.destination);
+    let routes: EscapeRoute[] = [];
+    try {
+      routes = await fetchEscapeRoutesForMode(HELP_GPS_POSITION, destinations, r.mode);
+    } catch {
+      routes = [];
+    }
+    if (!r.enabled || r.routesMode !== r.mode || routes.length === 0) return;
+    r.modeRoutes = routes;
+    if (
+      !r.arrived &&
+      (r.status === 'guiding' || r.status === 'routing' || r.status === 'no-route')
+    ) {
+      chooseRoute(null);
+    }
+  }, [chooseRoute]);
 
   const handleUserText = useCallback(
     (text: string) => {
@@ -372,7 +369,6 @@ export function useHelpController(
       }
 
       if (!r.mode) {
-        // A disability mention alone means "on foot, slowly".
         const mode = parseTransportMode(trimmed) ?? (accessibility ? 'foot' : null);
         if (!mode) {
           void announce('clarify-resource', trimmed);
@@ -381,8 +377,8 @@ export function useHelpController(
         r.mode = mode;
         patch({ mode });
         setStatus('routing');
+        void ensureModeRoutes();
         if (!chooseRoute(null)) {
-          // Model snapshot not ready yet — the snapshot effect finishes this.
           if (!r.snapshot) r.pendingRoute = true;
           return;
         }
@@ -391,7 +387,7 @@ export function useHelpController(
       }
       void announce('chat', trimmed);
     },
-    [announce, chooseRoute, patch, pushMessage, setStatus],
+    [announce, chooseRoute, ensureModeRoutes, patch, pushMessage, setStatus],
   );
 
   const actions: HelpActions = {
@@ -414,6 +410,8 @@ export function useHelpController(
           chatBusy: false,
           moveCarryM: 0,
           alongM: 0,
+          modeRoutes: null,
+          routesMode: null,
         });
         setState({ ...INITIAL_STATE });
         return;
@@ -422,8 +420,8 @@ export function useHelpController(
       r.arrived = false;
       r.moveCarryM = 0;
       r.alongM = 0;
-      // Restart the shared world clock at ignition so the rescue plays out
-      // against the full fire timeline.
+      r.modeRoutes = null;
+      r.routesMode = null;
       restartWorldRef.current();
       setState({
         ...INITIAL_STATE,
@@ -450,10 +448,6 @@ export function useHelpController(
     },
   };
 
-  // Re-validate on every model refresh: the person's risk class, the route
-  // still being low-risk from their CURRENT position, and the destination
-  // keeping its safety margins. A cut route switches to the backup (the
-  // assistant explains); no survivor means an honest no-route state.
   useEffect(() => {
     const r = refs.current;
     if (!r.enabled || !r.fix || !snapshot) return;
@@ -466,7 +460,6 @@ export function useHelpController(
       return;
     }
     if (r.status === 'no-route' && r.mode && !r.arrived) {
-      // Keep looking — the model may open a way out again.
       if (chooseRoute('reroute')) return;
     }
     if (r.status !== 'guiding' || !r.guidance || r.arrived) return;
@@ -497,9 +490,6 @@ export function useHelpController(
     }
   }, [snapshot, announce, chooseRoute, patch]);
 
-  // World-time movement: the simulated person responds perfectly — they
-  // follow the blue path at their resource's speed in FIRE time, so time
-  // spent chatting (slow world) genuinely costs progress.
   useEffect(() => {
     const r = refs.current;
     const prev = r.lastWorldMs;
@@ -511,8 +501,6 @@ export function useHelpController(
     if (r.moveCarryM < 25) return;
     const stepM = Math.min(r.moveCarryM, 1500);
     r.moveCarryM = 0;
-    // Monotone arc-length movement — never re-derived from the nearest
-    // vertex, so progress can't stall between sparse path points.
     r.alongM = Math.min(r.alongM + stepM, r.guidance.totalM);
     const step = pointAtArc(r.guidance.path, r.alongM);
     const fix = makeFix(step.point, 'demo', 12, step.headingDeg);
@@ -528,18 +516,15 @@ export function useHelpController(
       setStatus('arrived', { moving: false, remainingM: 0, remainingS: 0 });
       void announce('arrived');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldTimeMs]);
 
-  // Shared world-clock rate: real time while the person is replying,
-  // fast-forward while they move, normal demo playback once they are safe.
   useEffect(() => {
     if (!state.enabled) return;
     const compute = () => {
       const r = refs.current;
       let rate: number | null;
       if (r.arrived) {
-        rate = null; // back to the app's default playback
+        rate = null;
       } else {
         const chatting =
           r.status === 'locating' ||
