@@ -54,5 +54,10 @@ This app renders Google photorealistic 3D terrain, which requires a Google Maps 
 - The app needs a Google Maps API key with billing to display anything.
 
 ## AI-usage declaration
+Used AI to make the visualization of the wind vectors while animating with the fire
+Used AI as an LLM response to the user’s evacuation requests 
+Used AI to help fix errors 
+- Error #1: Google Maps API configuration 
+- Error #2: Overlaying evacuation pathway alongside fire movement
 
 
