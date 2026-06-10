@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import EvacuationMode from './components/EvacuationMode';
-import FireScene, { type EvacuationView } from './components/FireScene';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import HelpMode from './components/HelpMode';
+import FireScene, { type RescueView } from './components/FireScene';
 import InfoPanel, { type StructureStatus } from './components/InfoPanel';
 import TimelineControls, { type TimelineStage } from './components/TimelineControls';
-import { useEvacuationController } from './lib/evacuationRouting';
+import { useHelpController } from './lib/helpController';
 import type { FireRiskSnapshot } from './lib/fireRiskGeometry';
 import type { ModelSummary } from './lib/spreadDrivers';
 import {
@@ -32,7 +32,12 @@ function useAnimationClock(startTime: number, endTime: number) {
   const [time, setTime] = useState(startTime);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
-  const stateRef = useRef({ time: startTime, playing: true, speed: 1 });
+  const stateRef = useRef({
+    time: startTime,
+    playing: true,
+    speed: 1,
+    rateOverride: null as number | null,
+  });
 
   useEffect(() => {
     const span = Math.max(endTime - startTime, 1);
@@ -43,7 +48,11 @@ function useAnimationClock(startTime: number, endTime: number) {
       const dt = now - last;
       last = now;
       if (s.playing) {
-        s.time = Math.min(endTime, s.time + dt * (span / DEMO_DURATION_MS) * s.speed);
+        // rateOverride (fire-ms per real-ms) couples the world clock to the
+        // rescue sim: 1 = real time while the person replies, 60 = 1 fire
+        // minute per real second otherwise.
+        const rate = s.rateOverride ?? (span / DEMO_DURATION_MS) * s.speed;
+        s.time = Math.min(endTime, s.time + dt * rate);
         if (s.time >= endTime) {
           s.playing = false;
           setPlaying(false);
@@ -55,6 +64,10 @@ function useAnimationClock(startTime: number, endTime: number) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [startTime, endTime]);
+
+  const setRateOverride = useCallback((rate: number | null) => {
+    stateRef.current.rateOverride = rate;
+  }, []);
 
   const toggle = () => {
     const s = stateRef.current;
@@ -85,7 +98,7 @@ function useAnimationClock(startTime: number, endTime: number) {
     setSpeed(multiplier);
   };
 
-  return { time, playing, speed, toggle, replay, seek, changeSpeed };
+  return { time, playing, speed, toggle, replay, seek, changeSpeed, setRateOverride };
 }
 
 export default function App() {
@@ -107,14 +120,19 @@ function ReconstructionApp({ apiKey }: { apiKey: string }) {
     horizonMinutes: PREDICTION_ZONE.primaryMinutes,
   });
   const [risk, setRisk] = useState<FireRiskSnapshot | null>(null);
-  const evacuation = useEvacuationController(risk);
+  const help = useHelpController(risk, clock.time, clock.replay);
 
-  const evacuationView: EvacuationView = {
-    active: evacuation.state.enabled,
-    fix: evacuation.state.fix,
-    picking: evacuation.state.picking,
-    routePath: evacuation.state.best?.candidate.path ?? null,
-    destination: evacuation.state.best?.candidate.destination ?? null,
+  // The rescue sim drives the shared world clock: real time while the person
+  // is replying, fast-forward while they move, default playback once safe.
+  useEffect(() => {
+    clock.setRateOverride(help.state.enabled ? help.state.clockRate : null);
+  }, [clock.setRateOverride, help.state.enabled, help.state.clockRate]);
+
+  const rescueView: RescueView = {
+    active: help.state.enabled,
+    fix: help.state.fix,
+    routePath: help.state.guidance?.path ?? null,
+    destination: help.state.guidance?.route.destination ?? null,
   };
 
   const timelineStages = useMemo<TimelineStage[]>(
@@ -161,8 +179,7 @@ function ReconstructionApp({ apiKey }: { apiKey: string }) {
         time={clock.time}
         onModelUpdate={setModel}
         onRiskSnapshot={setRisk}
-        evacuation={evacuationView}
-        onMapPick={evacuation.actions.setManualFix}
+        rescue={rescueView}
       />
       <div className="edge-fade" aria-hidden="true" />
 
@@ -172,7 +189,7 @@ function ReconstructionApp({ apiKey }: { apiKey: string }) {
         <p className="tagline">{APP_TAGLINE}</p>
       </header>
 
-      <EvacuationMode state={evacuation.state} actions={evacuation.actions} />
+      <HelpMode state={help.state} actions={help.actions} />
 
       <InfoPanel
         time={clock.time}
