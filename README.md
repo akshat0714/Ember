@@ -26,4 +26,3 @@ Open the folder and run `index.html` with a local server (e.g., VS Code's
 Live Server) so location access works, or visit the live site: <GitHub Pages URL>.
 
 ## AI usage
-<List which AI tools you used and how — this is required by the hackathon.>
