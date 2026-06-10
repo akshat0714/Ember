@@ -1,10 +1,3 @@
-/**
- * Minimal ambient type declarations for the Google Maps JavaScript API
- * "maps3d" (Photorealistic 3D Maps) library — only the surface this app uses.
- * The library is loaded at runtime via the official script loader, so no npm
- * package is required.
- */
-
 declare namespace google.maps {
   function importLibrary(name: 'maps3d'): Promise<google.maps.maps3d.Maps3DLibrary>;
   function importLibrary(name: 'routes'): Promise<google.maps.RoutesLibrary>;
@@ -19,9 +12,19 @@ declare namespace google.maps {
     lng(): number;
   }
 
+  interface DirectionsStep {
+    instructions?: string;
+    start_location?: DirectionsLatLng;
+    end_location?: DirectionsLatLng;
+    distance?: { value: number };
+  }
+
   interface DirectionsLeg {
     distance?: { value: number };
     duration?: { value: number };
+    start_location?: DirectionsLatLng;
+    end_location?: DirectionsLatLng;
+    steps?: DirectionsStep[];
   }
 
   interface DirectionsRoute {

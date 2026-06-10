@@ -1,25 +1,3 @@
-/**
- * Route risk scoring against the modeled fire.
- *
- * Pure and renderer-free: candidates (road polylines + duration/distance) are
- * sampled and checked against the current front polygon, the predicted
- * "Likely spread in next N minutes" envelope, and the active tendrils.
- *
- * Hard rules (route REJECTED):
- *  - any sample inside the current fire polygon
- *  - any sample within the front buffer
- *  - touching the predicted envelope after the initial ESCAPE WINDOW (the
- *    first escapeWindowM of the route): leaving an at-risk start may weave
- *    along or through the envelope while getting clear, but the route may
- *    never lead back into predicted danger once past that window
- *  - a destination inside the envelope
- *
- * Soft penalties (score; lower is better): duration, distance, proximity to
- * the envelope, tendril-buffer crossings, driving toward the fire while near
- * it, riding canyon corridors near the envelope, and the length of the
- * initial escape segment. These never legitimize a hard-rejected route, and
- * if every candidate is rejected the app says so instead of faking safety.
- */
 import { HELP_CONFIG } from '../data/spreadModelConfig';
 import { cellIndexAt, getTerrainGrid } from './arrivalTimeModel';
 import type { SafeDestination } from '../data/helpScenario';
@@ -39,7 +17,7 @@ export interface RouteCandidate {
   path: LatLng[];
   distanceM: number;
   durationS: number;
-  source: 'authored';
+  source: 'authored' | 'google';
 }
 
 export type RouteStatus = 'safe' | 'caution' | 'rejected';
@@ -47,7 +25,6 @@ export type RouteStatus = 'safe' | 'caution' | 'rejected';
 export interface ScoredRoute {
   candidate: RouteCandidate;
   status: RouteStatus;
-  /** Lower is better; Infinity when rejected. */
   score: number;
   reasons: string[];
   minFrontDistM: number;
@@ -109,7 +86,6 @@ export function scoreRoute(candidate: RouteCandidate, snapshot: FireRiskSnapshot
       break;
     }
     if (frontDist < HELP_CONFIG.frontBufferM) {
-      // Only tolerable while still escaping the immediate origin area.
       if (escaped || i > 0) {
         rejected = true;
         reasons.push('passes within the active-front buffer');
@@ -128,7 +104,6 @@ export function scoreRoute(candidate: RouteCandidate, snapshot: FireRiskSnapshot
       escaped = true;
     }
 
-    // soft factors, evaluated near the risk area only
     const envDist = snapshot.envelopeRing ? minEnvelopeDistM : frontDist;
     if (!insideEnvelope && envDist < 500) {
       nearCount += 1 - envDist / 500;
@@ -143,10 +118,7 @@ export function scoreRoute(candidate: RouteCandidate, snapshot: FireRiskSnapshot
       const travel = bearingDeg(p, samples[i + 1]);
       const toFire = bearingDeg(p, snapshot.fireCentroid);
       const diff = Math.abs(((travel - toFire + 540) % 360) - 180);
-      if (diff > 135) towardFireSum += 1; // heading within ±45° of the fire
-      // Fleeing DOWNWIND means running where the wind is carrying the fire —
-      // the head of a wind-driven fire outruns people. Penalize alignment
-      // between travel and the spread bearing while near the risk area.
+      if (diff > 135) towardFireSum += 1;
       const windAngle =
         ((((travel - snapshot.windBearingDeg + 540) % 360) - 180) * Math.PI) / 180;
       downwindSum += Math.max(0, Math.cos(windAngle));

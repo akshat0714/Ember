@@ -1,28 +1,3 @@
-/**
- * SIMULATED rescue scenario for the Help flow.
- *
- * When someone presses "Help", the demo "locates" them on
- * E Las Virgenes Canyon Rd — the dirt road through Upper Las Virgenes Canyon
- * Open Space — about 1 km downwind (west-south-west) of the Kenneth Fire
- * ignition point, directly in the modeled spread path. That position, the
- * road geometry, and the safe destinations here are all SIMULATED demo data
- * (every name carries "(simulated)" and the UI repeats it); the fire-risk
- * checks against them use the live reconstruction model.
- *
- * Escape routes are hand-authored along real road alignments so the blue
- * path is always a physically possible way out:
- *
- *  - EAST (primary): up out of the canyon along E Las Virgenes Canyon Rd to
- *    the Valley Circle Blvd gate, then east on Vanowen St into West Hills —
- *    into the city, away from the WSW wind-driven spread.
- *  - SOUTH-WEST (backup): along E Las Virgenes Canyon Rd to the canyon
- *    junction, then south on Las Virgenes Canyon Rd to the trailhead gate
- *    toward Las Virgenes Rd, Calabasas.
- *
- * Both candidates are risk-scored against the live model every refresh; the
- * surviving lower-risk one is shown. A production deployment must replace
- * all of this with official evacuation zones, shelters, and road status.
- */
 import type { LatLng } from '../lib/interpolatePolygon';
 
 export interface SafeDestination {
@@ -33,29 +8,22 @@ export interface SafeDestination {
 }
 
 export interface RouteStep {
-  /** Road the step follows (must exist in the authored geometry). */
   road: string;
-  /** Compass word shown big in the card and spoken by the assistant. */
   direction: string;
-  /** Compass arrow glyph for the step list. */
   arrow: string;
-  /** One short instruction sentence. */
   text: string;
-  /** Index into `path` where this step begins. */
   fromIndex: number;
 }
 
 export interface EscapeRoute {
   id: string;
   destination: SafeDestination;
-  /** Full road polyline from the simulated GPS position to the destination. */
   path: LatLng[];
   steps: RouteStep[];
-  /** One-line qualitative summary the assistant reads out. */
   summary: string;
+  source?: 'authored' | 'google';
 }
 
-/** Where the simulated GPS fix drops: on E Las Virgenes Canyon Rd. */
 export const HELP_GPS_POSITION: LatLng = { lat: 34.1828, lng: -118.68 };
 
 export const HELP_LOCATION_LABEL = 'E Las Virgenes Canyon Rd';
@@ -76,11 +44,6 @@ const CALABASAS_STAGING: SafeDestination = {
   kind: 'safe-zone',
 };
 
-/**
- * EAST: E Las Virgenes Canyon Rd climbs north-east out of the drainage,
- * swings east along the high ground north of the burn area, exits at the
- * Valley Circle Blvd gate, then Vanowen St runs east into West Hills.
- */
 const EAST_PATH: LatLng[] = [
   HELP_GPS_POSITION,
   { lat: 34.1848, lng: -118.6786 },
@@ -91,18 +54,13 @@ const EAST_PATH: LatLng[] = [
   { lat: 34.1926, lng: -118.668 },
   { lat: 34.1932, lng: -118.6654 },
   { lat: 34.1936, lng: -118.663 },
-  { lat: 34.1937, lng: -118.6604 }, // gate at Valley Circle Blvd
+  { lat: 34.1937, lng: -118.6604 },
   { lat: 34.1937, lng: -118.656 },
   { lat: 34.1937, lng: -118.6515 },
   { lat: 34.1937, lng: -118.648 },
   { lat: 34.1937, lng: -118.645 },
 ];
 
-/**
- * SOUTH-WEST: E Las Virgenes Canyon Rd follows the canyon south-west (south
- * of the drainage axis the model channels fire along), then Las Virgenes
- * Canyon Rd runs south through the trailhead gate toward Calabasas.
- */
 const SOUTHWEST_PATH: LatLng[] = [
   HELP_GPS_POSITION,
   { lat: 34.1812, lng: -118.6826 },
@@ -112,10 +70,10 @@ const SOUTHWEST_PATH: LatLng[] = [
   { lat: 34.173, lng: -118.692 },
   { lat: 34.1712, lng: -118.6946 },
   { lat: 34.17, lng: -118.6976 },
-  { lat: 34.1696, lng: -118.7006 }, // junction with Las Virgenes Canyon Rd
+  { lat: 34.1696, lng: -118.7006 },
   { lat: 34.168, lng: -118.7018 },
   { lat: 34.1662, lng: -118.7026 },
-  { lat: 34.1644, lng: -118.7032 }, // trailhead gate
+  { lat: 34.1644, lng: -118.7032 },
   { lat: 34.1626, lng: -118.7036 },
   { lat: 34.161, lng: -118.7038 },
 ];
